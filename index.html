@@ -34,6 +34,11 @@
     --danger-bg: #2c1416;
     --warn: #d4af37;
     --warn-bg: #2b230e;
+    /* New: distinct color for "marked used moments ago, possibly your
+       own retry" — deliberately NOT red/gold so it reads as "pause and
+       check" rather than "reject" or "duplicate fraud attempt". */
+    --recent: #4fa3d1;
+    --recent-bg: #0e2530;
     --radius: 20px;
     box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px);
@@ -186,14 +191,17 @@
   .result-panel.success { background: var(--success-bg); border: 2px solid var(--success); }
   .result-panel.warn    { background: var(--warn-bg);    border: 2px solid var(--warn); }
   .result-panel.danger  { background: var(--danger-bg);  border: 2px solid var(--danger); }
+  .result-panel.recent  { background: var(--recent-bg);  border: 2px solid var(--recent); }
   .result-icon { font-size: 72px; line-height: 1; margin-bottom: 8px; }
   .success .result-icon { color: var(--success); }
   .warn .result-icon { color: var(--warn); }
   .danger .result-icon { color: var(--danger); }
+  .recent .result-icon { color: var(--recent); }
   .result-title { font-size: 34px; font-weight: 900; letter-spacing: 1px; margin: 4px 0 6px; }
   .success .result-title { color: var(--success); }
   .warn .result-title { color: var(--warn); }
   .danger .result-title { color: var(--danger); }
+  .recent .result-title { color: var(--recent); }
   .result-sub { font-size: 16px; color: var(--muted); font-weight: 600; margin-bottom: 26px; }
 
   .scan-next-btn {
@@ -267,11 +275,13 @@
       <button class="scan-next-btn" data-next>SCAN NEXT</button>
     </section>
 
-    <!-- ALREADY USED -->
-    <section id="state-already-used" class="result-panel warn hidden">
-      <div class="result-icon">✕</div>
+    <!-- ALREADY USED. Color class (warn vs recent), icon, and the
+         subtext are set at runtime by showAlreadyUsed() below, based
+         on how many seconds ago the coupon was marked used. -->
+    <section id="state-already-used" class="result-panel hidden">
+      <div class="result-icon" id="already-used-icon">✕</div>
       <div class="result-title">ALREADY USED</div>
-      <div class="result-sub">This coupon has already been used.</div>
+      <div class="result-sub" id="already-used-sub">This coupon has already been used.</div>
       <button class="scan-next-btn" data-next>SCAN NEXT</button>
     </section>
 
@@ -295,7 +305,7 @@
     <section id="state-error" class="result-panel warn hidden">
       <div class="result-icon">⚠</div>
       <div class="result-title">CONNECTION ERROR</div>
-      <div class="result-sub">Could not contact the verification server.</div>
+      <div class="result-sub">Could not contact the verification server. Tap TRY AGAIN — if the scan actually went through, it will come back as "already used".</div>
       <button class="secondary-button" id="btn-try-again">TRY AGAIN</button>
       <button class="scan-next-btn" data-next style="margin-top:10px;">SCAN NEXT</button>
     </section>
@@ -318,6 +328,12 @@
   const API_URL = 'https://script.google.com/macros/s/AKfycbwXSiniOgw4qPopu-37WoUPvf0ss-HJ5AcyVcSU36Pf5jcGO-eJtj1rvQR8y-KxRtXt/exec';
 
   const QR_READER_ELEMENT_ID = 'qr-reader';
+
+  // Below this many seconds, an "already_used" result is treated as
+  // "possibly your own last scan whose reply got lost" rather than a
+  // plain duplicate. Tune this to taste — 20s comfortably covers a
+  // dropped connection + a volunteer hitting TRY AGAIN or rescanning.
+  const RECENT_USE_THRESHOLD_SECONDS = 20;
 
   const STATES = [
     'ready', 'scanning', 'camera-error', 'processing',
@@ -497,7 +513,7 @@
         setState('verified');
         break;
       case 'already_used':
-        setState('already-used');
+        showAlreadyUsed(data);
         break;
       case 'rejected':
         setState('rejected');
@@ -510,6 +526,36 @@
         setState('error');
         break;
     }
+  }
+
+  /**
+   * Distinguishes "marked used moments ago — probably your own retry
+   * after a lost connection" from a plain, older, genuine duplicate.
+   * Relies on `secondsAgo` from the backend, which is only present if
+   * the sheet has the optional "Used At" column (see Code.gs). If it's
+   * missing, this quietly falls back to the old flat "already used"
+   * look — nothing breaks either way.
+   */
+  function showAlreadyUsed(data) {
+    const icon = document.getElementById('already-used-icon');
+    const sub = document.getElementById('already-used-sub');
+    const panel = els['already-used'];
+    const secondsAgo = data && typeof data.secondsAgo === 'number' ? data.secondsAgo : null;
+
+    panel.classList.remove('warn', 'recent');
+
+    if (secondsAgo !== null && secondsAgo <= RECENT_USE_THRESHOLD_SECONDS) {
+      panel.classList.add('recent');
+      icon.textContent = '↺';
+      sub.textContent = 'Marked used ' + secondsAgo + 's ago — likely your own last scan losing ' +
+        'connection, not a genuine repeat. Confirm with the coordinator before turning this person away.';
+    } else {
+      panel.classList.add('warn');
+      icon.textContent = '✕';
+      sub.textContent = 'This coupon has already been used.';
+    }
+
+    setState('already-used');
   }
 
   // ---------------------------------------------------------------------
