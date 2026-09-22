@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ONAM '26 — Coupon Verification</title>
 
+<!-- Preconnect to the Apps Script domains ahead of time so the TCP+TLS
+     handshake for the verification request (and its redirect hop to
+     script.googleusercontent.com) is already warmed up by the time the
+     first QR code is scanned, instead of paying that cost mid-scan. -->
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="dns-prefetch" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+<link rel="dns-prefetch" href="https://script.googleusercontent.com">
+
 <!-- Robust, widely-used camera + QR scanning library. Handles camera
      lifecycle, rear-camera selection, and QR detection across Android
      Chrome, iPhone Safari, and desktop browsers. -->
@@ -355,12 +364,22 @@
     const scanner = getScanner();
 
     const config = {
-      fps: 10,
+      fps: 15, // was 10 — modern phones handle this fine and it shaves
+               // a meaningful chunk off "time until a code is detected"
       qrbox: function (viewfinderWidth, viewfinderHeight) {
         const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.68);
         return { width: size, height: size };
       },
-      aspectRatio: 1.0
+      aspectRatio: 1.0,
+      // Uses the browser's own native barcode decoder (Chrome on
+      // Android, and Safari 17+) instead of html5-qrcode's JS-based
+      // jsQR fallback. The native decoder is meaningfully faster and
+      // more tolerant of angle/glare. On browsers without native
+      // support, html5-qrcode silently falls back to its normal JS
+      // decoder, so this is a pure win with no downside.
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true
+      }
     };
 
     try {
