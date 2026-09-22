@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ONAM '26 — Coupon Verification</title>
+
+<!-- Robust, widely-used camera + QR scanning library. Handles camera
+     lifecycle, rear-camera selection, and QR detection across Android
+     Chrome, iPhone Safari, and desktop browsers. -->
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0a1f14;
+    --panel: #102a1b;
+    --panel-border: #1f4d2f;
+    --text: #f4f7ec;
+    --muted: #9bbaa4;
+    --brand: #d4af37;
+    --brand-2: #f2d571;
+    --success: #2f9e5b;
+    --success-bg: #0e2c1a;
+    --danger: #e0454a;
+    --danger-bg: #2c1416;
+    --warn: #d4af37;
+    --warn-bg: #2b230e;
+    --radius: 20px;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #app {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px 16px 28px;
+  }
+  header {
+    width: 100%;
+    max-width: 480px;
+    text-align: center;
+    margin-bottom: 14px;
+  }
+  header .event {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--brand);
+    margin: 4px 0 0;
+  }
+  header .subtitle {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin: 2px 0 0;
+  }
+  main {
+    width: 100%;
+    max-width: 480px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 16px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  /* READY */
+  .ready-panel { text-align: center; padding: 40px 20px; }
+  .ready-icon { font-size: 56px; margin-bottom: 6px; }
+  .big-button {
+    width: 100%;
+    padding: 20px;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #241c02;
+    cursor: pointer;
+    margin-top: 18px;
+  }
+  .big-button:active { filter: brightness(0.92); }
+  .secondary-button {
+    width: 100%;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 14px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    margin-top: 10px;
+  }
+
+  /* Scanner */
+  .scanner-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #000;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--panel-border);
+  }
+  #qr-reader {
+    width: 100%;
+    height: 100%;
+  }
+  /* html5-qrcode injects its own <video>/<canvas>; make sure it fills
+     the box and covers it rather than being letterboxed. */
+  #qr-reader video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+  /* Hide the library's default file-picker / permission UI chrome —
+     we drive everything from our own buttons and states. */
+  #qr-reader img { display: none !important; }
+  #qr-reader__dashboard { display: none !important; }
+  #qr-reader__scan_region { border: none !important; }
+
+  .scan-frame-overlay {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 68%; aspect-ratio: 1/1;
+    transform: translate(-50%, -50%);
+    border: 3px solid var(--brand);
+    border-radius: 18px;
+    box-shadow: 0 0 0 999px rgba(0,0,0,0.35);
+    pointer-events: none;
+  }
+  .scan-hint {
+    text-align: center;
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  /* Processing */
+  .processing-panel { text-align: center; padding: 60px 20px; }
+  .spinner {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    border: 5px solid var(--panel-border);
+    border-top-color: var(--brand);
+    margin: 0 auto 18px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .processing-panel .label { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
+
+  /* Result screens */
+  .result-panel { text-align: center; padding: 44px 22px; border-radius: var(--radius); }
+  .result-panel.success { background: var(--success-bg); border: 2px solid var(--success); }
+  .result-panel.warn    { background: var(--warn-bg);    border: 2px solid var(--warn); }
+  .result-panel.danger  { background: var(--danger-bg);  border: 2px solid var(--danger); }
+  .result-icon { font-size: 72px; line-height: 1; margin-bottom: 8px; }
+  .success .result-icon { color: var(--success); }
+  .warn .result-icon { color: var(--warn); }
+  .danger .result-icon { color: var(--danger); }
+  .result-title { font-size: 34px; font-weight: 900; letter-spacing: 1px; margin: 4px 0 6px; }
+  .success .result-title { color: var(--success); }
+  .warn .result-title { color: var(--warn); }
+  .danger .result-title { color: var(--danger); }
+  .result-sub { font-size: 16px; color: var(--muted); font-weight: 600; margin-bottom: 18px; }
+  .info-card {
+    background: rgba(255,255,255,0.04);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 4px 0 20px;
+    text-align: left;
+  }
+  .info-row {
+    display: flex; justify-content: space-between;
+    padding: 6px 0; font-size: 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-row .k { color: var(--muted); font-weight: 600; }
+  .info-row .v { font-weight: 700; }
+
+  .scan-next-btn {
+    width: 100%;
+    padding: 18px;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    border: none;
+    border-radius: 14px;
+    background: var(--text);
+    color: #10161c;
+    cursor: pointer;
+  }
+
+  .footer-note { text-align: center; color: var(--muted); font-size: 12px; margin-top: 18px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="event">ONAM '26</div>
+    <div class="subtitle">Coupon Verification</div>
+  </header>
+
+  <main>
+
+    <!-- READY -->
+    <section id="state-ready" class="panel ready-panel">
+      <div class="ready-icon">🎫</div>
+      <div style="font-weight:700;font-size:16px;color:var(--muted);">Ready to check coupons</div>
+      <button class="big-button" id="btn-start-scan">SCAN QR CODE</button>
+    </section>
+
+    <!-- SCANNING -->
+    <section id="state-scanning" class="panel hidden">
+      <div class="scanner-wrap">
+        <div id="qr-reader"></div>
+        <div class="scan-frame-overlay"></div>
+      </div>
+      <div class="scan-hint">Align the QR code inside the box</div>
+    </section>
+
+    <!-- CAMERA ERROR -->
+    <section id="state-camera-error" class="panel hidden" style="text-align:center;">
+      <div class="ready-icon">📷</div>
+      <div style="font-weight:800; font-size:19px; letter-spacing:1px; margin-bottom:6px;">CAMERA UNAVAILABLE</div>
+      <div style="font-weight:700; font-size:16px; margin-bottom:8px;" id="camera-error-detail">
+        Could not access the camera. Please check browser camera permissions and try again.
+      </div>
+      <div style="color:var(--muted); font-size:13px; line-height:1.5;">
+        On iPhone: Settings → Safari → Camera. On Android Chrome: tap the lock icon in the address bar →
+        Permissions → Camera. Make sure you opened this page directly in Chrome/Safari, not inside an app's
+        built-in browser (e.g. WhatsApp/Instagram), which often blocks camera access.
+      </div>
+      <button class="big-button" id="btn-retry-camera">TRY CAMERA AGAIN</button>
+    </section>
+
+    <!-- PROCESSING -->
+    <section id="state-processing" class="panel processing-panel hidden">
+      <div class="spinner"></div>
+      <div class="label">VERIFYING...</div>
+    </section>
+
+    <!-- VERIFIED -->
+    <section id="state-verified" class="result-panel success hidden">
+      <div class="result-icon">✓</div>
+      <div class="result-title">VERIFIED</div>
+      <div class="result-sub">Coupon accepted</div>
+      <div class="info-card" id="verified-info"></div>
+      <button class="scan-next-btn" data-next>SCAN NEXT</button>
+    </section>
+
+    <!-- ALREADY USED -->
+    <section id="state-already-used" class="result-panel warn hidden">
+      <div class="result-icon">✕</div>
+      <div class="result-title">ALREADY USED</div>
+      <div class="result-sub">This coupon has already been used.</div>
+      <button class="scan-next-btn" data-next>SCAN NEXT</button>
+    </section>
+
+    <!-- REJECTED -->
+    <section id="state-rejected" class="result-panel danger hidden">
+      <div class="result-icon">✕</div>
+      <div class="result-title">REJECTED</div>
+      <div class="result-sub">This coupon is not valid for entry.</div>
+      <button class="scan-next-btn" data-next>SCAN NEXT</button>
+    </section>
+
+    <!-- NOT FOUND -->
+    <section id="state-not-found" class="result-panel danger hidden">
+      <div class="result-icon">✕</div>
+      <div class="result-title">INVALID QR</div>
+      <div class="result-sub">This QR code does not match any coupon.</div>
+      <button class="scan-next-btn" data-next>SCAN NEXT</button>
+    </section>
+
+    <!-- CONNECTION ERROR -->
+    <section id="state-error" class="result-panel warn hidden">
+      <div class="result-icon">⚠</div>
+      <div class="result-title">CONNECTION ERROR</div>
+      <div class="result-sub">Could not contact the verification server.</div>
+      <button class="secondary-button" id="btn-try-again">TRY AGAIN</button>
+      <button class="scan-next-btn" data-next style="margin-top:10px;">SCAN NEXT</button>
+    </section>
+
+  </main>
+
+  <div class="footer-note">Staff use only · Onam 2026</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // =========================================================================
+  //  CONFIGURATION — EDIT THIS LINE
+  // =========================================================================
+  //  Paste your deployed Google Apps Script Web App URL here. It looks like:
+  //  https://script.google.com/macros/s/AKfycb.../exec
+  // =========================================================================
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwXSiniOgw4qPopu-37WoUPvf0ss-HJ5AcyVcSU36Pf5jcGO-eJtj1rvQR8y-KxRtXt/exec';
+
+  const QR_READER_ELEMENT_ID = 'qr-reader';
+
+  const STATES = [
+    'ready', 'scanning', 'camera-error', 'processing',
+    'verified', 'already-used', 'rejected', 'not-found', 'error'
+  ];
+
+  const els = {};
+  STATES.forEach(function (s) {
+    els[s] = document.getElementById('state-' + s);
+  });
+
+  let html5QrCode = null;   // Html5Qrcode instance, created lazily
+  let isProcessing = false; // true from the moment a code is detected
+  let pendingToken = null;  // token currently in flight (for TRY AGAIN)
+  let cameraActive = false;
+
+  function setState(name) {
+    STATES.forEach(function (s) {
+      els[s].classList.toggle('hidden', s !== name);
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Camera lifecycle
+  // ---------------------------------------------------------------------
+
+  function getScanner() {
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode(QR_READER_ELEMENT_ID, /* verbose= */ false);
+    }
+    return html5QrCode;
+  }
+
+  async function startScanning() {
+    setState('scanning');
+    isProcessing = false;
+    pendingToken = null;
+
+    if (typeof Html5Qrcode === 'undefined') {
+      showCameraError('The QR scanner library failed to load. Check your internet connection and reload the page.');
+      return;
+    }
+
+    const scanner = getScanner();
+
+    const config = {
+      fps: 10,
+      qrbox: function (viewfinderWidth, viewfinderHeight) {
+        const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.68);
+        return { width: size, height: size };
+      },
+      aspectRatio: 1.0
+    };
+
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        config,
+        onScanSuccess,
+        onScanFailure // per-frame "no code found yet" callback — intentionally ignored
+      );
+      cameraActive = true;
+    } catch (err) {
+      console.error('Camera start error:', err);
+      // Some browsers/devices report no exact "environment" camera —
+      // fall back to whatever camera is available.
+      try {
+        await scanner.start(
+          { facingMode: 'user' },
+          config,
+          onScanSuccess,
+          onScanFailure
+        );
+        cameraActive = true;
+      } catch (err2) {
+        console.error('Camera fallback start error:', err2);
+        showCameraError(describeCameraError(err2 || err));
+      }
+    }
+  }
+
+  async function stopScanning() {
+    if (!cameraActive || !html5QrCode) return;
+    try {
+      await html5QrCode.stop();
+      html5QrCode.clear();
+    } catch (err) {
+      console.error('Camera stop error:', err);
+    } finally {
+      cameraActive = false;
+    }
+  }
+
+  function describeCameraError(err) {
+    const name = (err && err.name) || '';
+    const msg = String((err && err.message) || err || '');
+
+    if (name === 'NotAllowedError' || /Permission denied/i.test(msg)) {
+      return 'Camera permission was denied. Please allow camera access for this site.';
+    }
+    if (name === 'NotFoundError' || /no camera|not found/i.test(msg)) {
+      return 'No usable camera was found on this device.';
+    }
+    if (name === 'NotReadableError' || /already in use/i.test(msg)) {
+      return 'The camera is already in use by another app. Close other camera apps and try again.';
+    }
+    if (name === 'SecurityError' || /secure context|https/i.test(msg)) {
+      return 'Camera access requires a secure (HTTPS) page. Make sure you opened this site over HTTPS.';
+    }
+    return 'Could not access the camera. Please check browser camera permissions and try again.';
+  }
+
+  function showCameraError(message) {
+    document.getElementById('camera-error-detail').textContent = message;
+    stopScanning();
+    setState('camera-error');
+  }
+
+  // ---------------------------------------------------------------------
+  // Scan handling — duplicate-callback protection
+  // ---------------------------------------------------------------------
+
+  function onScanSuccess(decodedText /*, decodedResult */) {
+    if (isProcessing) return; // ignore any further callbacks mid-flight
+    isProcessing = true;
+
+    // Stop scanning immediately so the same physical QR code cannot be
+    // read again while we're waiting on / showing the result.
+    stopScanning();
+    submitToken(decodedText);
+  }
+
+  function onScanFailure() {
+    // Called continuously while no QR code is in frame — expected and
+    // intentionally ignored (not an error).
+  }
+
+  async function submitToken(rawText) {
+    setState('processing');
+    const token = rawText; // frontend must not trim/alter beyond this;
+                            // exact trimming + comparison happens server-side
+    pendingToken = token;
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        // IMPORTANT: text/plain avoids a CORS preflight (OPTIONS) request,
+        // which Google Apps Script Web Apps cannot answer with custom
+        // headers. The backend still parses this body as JSON.
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ token: token })
+      });
+
+      if (!res.ok) throw new Error('Bad response status: ' + res.status);
+
+      const data = await res.json();
+      showResult(data);
+    } catch (err) {
+      console.error('Verification request failed:', err);
+      setState('error');
+    }
+  }
+
+  function showResult(data) {
+    switch (data && data.status) {
+      case 'verified':
+        renderVerifiedInfo(data);
+        setState('verified');
+        break;
+      case 'already_used':
+        setState('already-used');
+        break;
+      case 'rejected':
+        setState('rejected');
+        break;
+      case 'not_found':
+        setState('not-found');
+        break;
+      default:
+        // Includes "error" and any unexpected/malformed response.
+        setState('error');
+        break;
+    }
+  }
+
+  function renderVerifiedInfo(data) {
+    const rows = [];
+    if (data.name) rows.push(['Name', data.name]);
+    if (data.rollNumber) rows.push(['Roll Number', data.rollNumber]);
+    if (data.couponId) rows.push(['Coupon ID', data.couponId]);
+
+    const container = document.getElementById('verified-info');
+    if (rows.length === 0) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+    }
+    container.classList.remove('hidden');
+    container.innerHTML = rows.map(function (r) {
+      return '<div class="info-row"><span class="k">' + r[0] + '</span><span class="v">' + escapeHtml(r[1]) + '</span></div>';
+    }).join('');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+  }
+
+  // ---------------------------------------------------------------------
+  // Page lifecycle — don't leave the camera running in the background
+  // ---------------------------------------------------------------------
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && cameraActive) {
+      stopScanning();
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // Event wiring
+  // ---------------------------------------------------------------------
+
+  document.getElementById('btn-start-scan').addEventListener('click', startScanning);
+  document.getElementById('btn-retry-camera').addEventListener('click', startScanning);
+
+  document.getElementById('btn-try-again').addEventListener('click', function () {
+    if (pendingToken) {
+      submitToken(pendingToken);
+    } else {
+      startScanning();
+    }
+  });
+
+  document.querySelectorAll('[data-next]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      isProcessing = false;
+      pendingToken = null;
+      startScanning();
+    });
+  });
+
+  // Initial state — camera permission is NOT requested until the user
+  // presses "SCAN QR CODE".
+  setState('ready');
+})();
+</script>
+</body>
+</html>
